@@ -1,0 +1,194 @@
+#!/sbin/sh
+# SD repartitioning for multiboot slots script 
+# for JSR D10F (HighScreen Boost IIse)
+# By S-trace <S-trace@list.ru>
+# v0.00 13.jan.2018
+
+RECOVERY_FD="$2"
+ZIP="$3"
+
+# Any pre-check was failed
+E_BADRECOVERY=3
+E_SDSIZEMISMATCH=4
+E_BADNAME=5
+
+# An error during preparing procedures
+E_GPTWASBROKEN=11
+E_UMOUNTFAIL=12
+E_GPTEXTRACTFAIL=13
+E_SDSTILLBUSY=14
+
+RECOVERY_BUILD_DATE_2870M_TEST1="1453027702"
+RECOVERY_BUILD_DATE_3020="1461523680"
+
+EMMC_SIZE="7818182656"
+SD_BLOCK_DEVICE="/dev/block/platform/msm_sdcc.2/mmcblk1"
+SD_PARTITIONS_PATH="/dev/block/platform/msm_sdcc.2/by-name"
+SD_MOUNTED_PARTITIONS_EXPR="mmcblk1|msm_sdcc.2"
+
+ui_print() {
+  echo "ui_print $1 " > "/proc/$$/fd/$RECOVERY_FD"
+  if ! [ q"$2" = q ]; then
+    echo "ui_print UI_PRINT: extra arg: $2" > "/proc/$$/fd/$RECOVERY_FD"
+  fi
+}
+
+wrap_output() {
+  while read -r line; do
+    ui_print "$line"
+  done
+}
+
+get_mounted_partitions() {
+  mounted_partitions="$(mount | grep -E "$SD_MOUNTED_PARTITIONS_EXPR" | awk '{print $3}')"
+}
+
+system=0
+userdata=0
+eval $(basename "$ZIP"|tr _. '\n'|grep =)
+if [ q"$system" = q"0" ] || [ q"$userdata" = q"0" ]; then
+  ui_print "ERROR: Can't determine partitions sizes: system=$system userdata=$userdata"
+  ui_print "Please name this ZIP like 'system=1000_userdata=2000.zip'"
+  exit "$E_BADNAME"
+fi
+ui_print "INFO: system=$system userdata=$userdata"
+
+ui_print "INFO: Verifying recovery version"
+ro_bootimage_build_date_utc="$(getprop ro.bootimage.build.date.utc)"
+if [ q"$ro_bootimage_build_date_utc" = q ] ; then
+  ui_print "ERROR: Legacy recovery detected"
+  ui_print "Refusing to continue, nothing changed yet"
+  exit "$E_BADRECOVERY"
+  fi
+  case "$ro_bootimage_build_date_utc" in 
+  "$RECOVERY_BUILD_DATE_2870M_TEST1") ui_print "INFO: TWRP 2.8.7.0M test1 recovery detected" ;;
+"$RECOVERY_BUILD_DATE_3020")        ui_print "INFO: TWRP 3.0.2.0 recovery detected" ;;
+*) ui_print "WARNING: unknown recovery detected (ro.bootimage.build.date.utc=$ro_bootimage_build_date_utc)" ;;
+esac
+
+ui_print "INFO: Verifying SD card size"
+sd_size="$(blockdev --getsize64 "$SD_BLOCK_DEVICE")"
+if [ q"$EMMC_SIZE" = q"$sd_size" ]; then
+  ui_print "ERROR: SD card size mismatch!"
+  ui_print "Refusing to continue, nothing changed yet"
+  ui_print "Please reboot from eMMC and try again"
+  exit "$E_SDSIZEMISMATCH"
+fi
+ui_print "INFO: SD card size matched"
+
+ui_print "INFO: Checking for mounted SD partitions"
+get_mounted_partitions
+if [ q"$mounted_partitions" = q ]; then
+  ui_print "INFO: No SD partitions mounted"
+else
+  ui_print "INFO: SD partitions mounted: '$(echo "$mounted_partitions" | tr '\n' ' ')'"
+  for mountpoint in $mounted_partitions; do 
+    ui_print "INFO: umounting '$mountpoint'"
+    if ! umount "$mountpoint"; then
+      ui_print "ERROR: unable to umount '$mountpoint'"
+      ui_print "Refusing to continue, nothing changed yet"
+      exit "$E_UMOUNTFAIL"
+    fi
+  done
+  ui_print "INFO: Checking for mounted SD partitions again"
+  get_mounted_partitions
+  if [ q"$mounted_partitions" = q ]; then
+    ui_print "INFO: No SD partitions mounted"
+  else 
+    ui_print "ERROR: unable to umount '$mounted_partitions'"
+    ui_print "Refusing to continue, nothing changed yet"
+    exit "$E_UMOUNTFAIL"
+  fi
+fi
+ui_print "INFO: All SD partitions was umounted"
+sync
+
+ui_print "INFO: Checking if SD still busy"
+if ! blockdev --rereadpt "$SD_BLOCK_DEVICE"; then
+  ui_print "ERROR: SD still busy"
+  ui_print "Refusing to continue, nothing changed yet"
+  exit "$E_SDSTILLBUSY"
+fi
+sleep 5
+ui_print "INFO: SD is not busy now"
+
+ui_print "INFO: Verifying current GPT integrity"
+if ! sgdisk --verify "$SD_BLOCK_DEVICE" | grep -q 'No problems found'; then
+  ui_print "ERROR: Current GPT already was broken!"
+  ui_print "Refusing to continue, nothing changed yet"
+  ui_print "Please set multiboot slot to 1 before adding new multiboot slots"
+  exit "$E_GPTWASBROKEN"
+fi
+ui_print "INFO: Current GPT is correct"
+
+CURRENT_SLOTS_COUNT="$(sgdisk --print "$SD_BLOCK_DEVICE"|grep -c ' userdata.*$')"
+SLOT="$((CURRENT_SLOTS_COUNT + 1))"
+PARTITIONS_COUNT="$(grep mmcblk1p /proc/partitions -c)"
+BOOT="$((PARTITIONS_COUNT + 1))"
+RECOVERY="$((BOOT + 1))"
+SYSTEM="$((RECOVERY + 1))"
+USERDATA="$((SYSTEM + 1))"
+
+timer=30
+ui_print " "
+ui_print "INFO: Going to add new slot $SLOT with system=$system MiB and userdata=$userdata MiB"
+ui_print "INFO: boot=$BOOT recovery=$RECOVERY system=$SYSTEM userdata=$USERDATA"
+ui_print " "
+ui_print " "
+ui_print " "
+ui_print "INFO: Pre-checks completed, are you still sure?"
+ui_print "INFO: Power down device immediatly if not!"
+ui_print "INFO: Last chance, you have $timer seconds."
+ui_print " "
+while [ $timer -gt 0 ]; do
+  sleep 5
+  timer=$((timer-5))
+  ui_print "INFO: $timer seconds left."
+  echo 200 > /sys/class/timed_output/vibrator/enable
+done
+ui_print "INFO: Time over, device is still up and running."
+ui_print " "
+ui_print "INFO: LET'S ROCK!"
+
+sgdisk "$SD_BLOCK_DEVICE" \
+--set-alignment=2048 \
+--delete=1 \
+--new="$BOOT":0:+16M \
+--change-name="$BOOT":boot$SLOT \
+--typecode="$BOOT":DEADBEEF-0000-0000-0000-000000000000 \
+--new="$RECOVERY":0:+16M \
+--change-name="$RECOVERY":recovery$SLOT \
+--typecode="$RECOVERY":DEADBEEF-0000-0000-0000-000000000000 \
+--new="$SYSTEM":0:+"$system"M \
+--change-name="$SYSTEM":system$SLOT \
+--typecode="$SYSTEM":DEADBEEF-0000-0000-0000-000000000000 \
+--attributes="$SYSTEM":set:60 \
+--new="$USERDATA":0:+"$userdata"M \
+--change-name="$USERDATA":userdata$SLOT \
+--typecode="$USERDATA":DEADBEEF-0000-0000-0000-000000000000 \
+--attributes="$USERDATA":set:60 \
+--largest-new=1 \
+--change-name=1:usbmsc \
+--typecode=1:EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
+
+if [ 0"$?" -ne 0 ]; then
+  ui_print "ERROR: sgdisk returned error code $?"
+  ui_print "Refusing to continue, nothing changed yet"
+  exit "$E_GPTEXTRACTFAIL"
+fi
+
+ui_print " "
+ui_print "INFO: Updating /dev/block/ symlinks"
+rm -rf /dev/block/
+rm /dev/.coldboot_done
+stop ueventd
+start ueventd
+ui_print "INFO: Waiting for ueventd coldboot"
+until [ -f /dev/.coldboot_done ]; do sleep 1; done
+ui_print "INFO: Waiting for ueventd coldboot done"
+
+ui_print "INFO: Copying current recovery to the new slot"
+cat "$SD_PARTITIONS_PATH"/recovery > "$SD_PARTITIONS_PATH"/recovery$SLOT
+sync
+
+ui_print "INFO: Done!"
