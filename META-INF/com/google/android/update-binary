@@ -114,6 +114,7 @@ fi
 ui_print "INFO: All SD partitions was umounted"
 sync
 
+sleep 5
 ui_print "INFO: Checking if SD still busy"
 if ! blockdev --rereadpt "$SD_BLOCK_DEVICE"; then
   ui_print "ERROR: SD still busy"
