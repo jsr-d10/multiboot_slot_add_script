@@ -22,9 +22,18 @@ RECOVERY_BUILD_DATE_2870M_TEST1="1453027702"
 RECOVERY_BUILD_DATE_3020="1461523680"
 
 EMMC_SIZE="7818182656"
-SD_BLOCK_DEVICE="/dev/block/platform/msm_sdcc.2/mmcblk1"
-SD_PARTITIONS_PATH="/dev/block/platform/msm_sdcc.2/by-name"
-SD_MOUNTED_PARTITIONS_EXPR="mmcblk1|msm_sdcc.2"
+SDCC_CONFIG="$(getprop ro.boot.swap_sdcc)"
+if [ q"$SDCC_CONFIG" = q1 ] || [ q"$SDCC_CONFIG" = q ]; then
+  SD_BLOCK_DEVICE="/dev/block/platform/msm_sdcc.2/mmcblk1"
+  SD_PARTITIONS_PATH="/dev/block/platform/msm_sdcc.2/by-name"
+  SD_MOUNTED_PARTITIONS_EXPR="mmcblk1|msm_sdcc.2"
+  PARTITIONS_COUNT_EXPR="mmcblk1p"
+else
+  SD_BLOCK_DEVICE="/dev/block/platform/msm_sdcc.1/mmcblk0"
+  SD_PARTITIONS_PATH="/dev/block/platform/msm_sdcc.1/by-name"
+  SD_MOUNTED_PARTITIONS_EXPR="mmcblk0|msm_sdcc.1"
+  PARTITIONS_COUNT_EXPR="mmcblk0p"
+fi
 
 ui_print() {
   echo "ui_print $1 " > "/proc/$$/fd/$RECOVERY_FD"
@@ -123,7 +132,7 @@ ui_print "INFO: Current GPT is correct"
 
 CURRENT_SLOTS_COUNT="$(sgdisk --print "$SD_BLOCK_DEVICE"|grep -c ' userdata.*$')"
 SLOT="$((CURRENT_SLOTS_COUNT + 1))"
-PARTITIONS_COUNT="$(grep mmcblk1p /proc/partitions -c)"
+PARTITIONS_COUNT="$(grep "$PARTITIONS_COUNT_EXPR" /proc/partitions -c)"
 BOOT="$((PARTITIONS_COUNT + 1))"
 RECOVERY="$((BOOT + 1))"
 SYSTEM="$((RECOVERY + 1))"
