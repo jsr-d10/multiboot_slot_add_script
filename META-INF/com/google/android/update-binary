@@ -56,8 +56,8 @@ get_mounted_partitions() {
 
 system=0
 userdata=0
-eval $(basename "$ZIP"|tr _. '\n'|grep =)
-if [ q"$system" = q"0" ] || [ q"$userdata" = q"0" ]; then
+eval "$(basename "$ZIP"|tr ' _.' '\n'|grep =)"
+if [ q"$system" = q"0" ] || [ q"$userdata" = q"0" ] || [ -z "$system" ] || [ -z "$userdata" ]; then
   ui_print "ERROR: Can't determine partitions sizes: system=$system userdata=$userdata"
   ui_print "Please name this ZIP like 'system=1000_userdata=2000.zip'"
   exit "$E_BADNAME"
