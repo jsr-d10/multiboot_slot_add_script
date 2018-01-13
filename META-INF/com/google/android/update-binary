@@ -24,11 +24,13 @@ RECOVERY_BUILD_DATE_3020="1461523680"
 EMMC_SIZE="7818182656"
 SDCC_CONFIG="$(getprop ro.boot.swap_sdcc)"
 if [ q"$SDCC_CONFIG" = q1 ] || [ q"$SDCC_CONFIG" = q ]; then
+  BOOTED_FROM="eMMC"
   SD_BLOCK_DEVICE="/dev/block/platform/msm_sdcc.2/mmcblk1"
   SD_PARTITIONS_PATH="/dev/block/platform/msm_sdcc.2/by-name"
   SD_MOUNTED_PARTITIONS_EXPR="mmcblk1|msm_sdcc.2"
   PARTITIONS_COUNT_EXPR="mmcblk1p"
 else
+  BOOTED_FROM="SD"
   SD_BLOCK_DEVICE="/dev/block/platform/msm_sdcc.1/mmcblk0"
   SD_PARTITIONS_PATH="/dev/block/platform/msm_sdcc.1/by-name"
   SD_MOUNTED_PARTITIONS_EXPR="mmcblk0|msm_sdcc.1"
@@ -60,7 +62,7 @@ if [ q"$system" = q"0" ] || [ q"$userdata" = q"0" ]; then
   ui_print "Please name this ZIP like 'system=1000_userdata=2000.zip'"
   exit "$E_BADNAME"
 fi
-ui_print "INFO: system=$system userdata=$userdata"
+ui_print "INFO: Booted from $BOOTED_FROM system=$system userdata=$userdata"
 
 ui_print "INFO: Verifying recovery version"
 ro_bootimage_build_date_utc="$(getprop ro.bootimage.build.date.utc)"
