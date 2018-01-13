@@ -2,7 +2,7 @@
 # SD repartitioning for multiboot slots script 
 # for JSR D10F (HighScreen Boost IIse)
 # By S-trace <S-trace@list.ru>
-# v0.00 13.jan.2018
+# v0.01 13.jan.2018
 
 RECOVERY_FD="$2"
 ZIP="$3"
